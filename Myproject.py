@@ -1,10 +1,20 @@
+# --- [중요] Streamlit Cloud에서 ChromaDB 오류 해결을 위한 코드 (가장 윗줄에 있어야 함) ---
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+# ------------------------------------------------------------------------------------
+
 import streamlit as st
 import os
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+# [수정된 부분] 옛날 주소 대신 새 주소 사용!
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 from langchain_community.vectorstores import Chroma
 from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
 
 # --- 설정 및 초기화 ---
 st.set_page_config(page_title="SAP S/4HANA Pro", layout="wide")
@@ -172,4 +182,5 @@ def main_app():
 if st.session_state["logged_in"]:
     main_app()
 else:
+
     login_page()
