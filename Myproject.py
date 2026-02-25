@@ -1,38 +1,36 @@
-# --- [필수] Streamlit Cloud 오류 방지 코드 (맨 윗줄 유지) ---
+# --- [필수] Streamlit Cloud 오류 방지 코드 ---
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-# --------------------------------------------------------
+# ----------------------------------------
 
 import streamlit as st
 import os
-
-# [수정] 최신 LangChain 패키지 구조에 맞춘 import
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
 
-# [핵심] RetrievalQA는 이제 여기서 가져오는 게 안전합니다.
-from langchain.chains import RetrievalQA 
-# 만약 위 코드로도 에러가 나면 아래 줄 주석을 풀고 위 줄을 지우세요.
-# from langchain_community.chains import RetrievalQA
+# [추가됨] 인터넷 검색을 위한 도구
+from langchain_community.tools import DuckDuckGoSearchRun
 
 # --- 설정 및 초기화 ---
 st.set_page_config(page_title="SAP S/4HANA Pro", layout="wide")
 
-# 데이터를 영구 저장할 폴더 이름 (이 폴더가 '서가' 역할을 합니다)
+# 데이터 저장소 경로
 PERSIST_DIRECTORY = "./chroma_db"
+INSTRUCTION_FILE = "system_instruction.txt"
 
-# 간단한 사용자 아이디/비번 관리 (실제 서비스에선 DB를 써야 하지만, 지금은 이렇게!)
-# admin: 관리자 (PDF 업로드 가능), user: 일반 사용자 (채팅만 가능)
+# 사용자 계정
 USERS = {
-    "admin": "admin123",  # 관리자 ID : 비밀번호
-    "user1": "guest123",  # 사용자 ID : 비밀번호
-    "client": "sap2024"   # 또 다른 사용자
+    "admin": "admin123",
+    "user1": "guest123",
+    "client": "sap2024"
 }
 
-# --- 세션 상태 초기화 (로그인 상태 기억하기 위함) ---
+# --- 세션 초기화 ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 if "username" not in st.session_state:
@@ -40,87 +38,94 @@ if "username" not in st.session_state:
 if "user_role" not in st.session_state:
     st.session_state["user_role"] = ""
 
-# --- 1. 로그인 화면 함수 ---
+# --- 도우미 함수 ---
+def load_instruction():
+    if os.path.exists(INSTRUCTION_FILE):
+        with open(INSTRUCTION_FILE, "r", encoding="utf-8") as f:
+            return f.read()
+    else:
+        return "당신은 SAP S/4HANA 전문가입니다. 문서를 바탕으로 친절하게 답변해주세요."
+
+def save_instruction(text):
+    with open(INSTRUCTION_FILE, "w", encoding="utf-8") as f:
+        f.write(text)
+
+# --- 1. 로그인 화면 ---
 def login_page():
-    st.title("🔒 SAP S/4HANA Assistant Login")
-    
+    st.title("🔒 SAP Assistant Login")
     col1, col2 = st.columns([1, 2])
     with col1:
         username = st.text_input("아이디")
         password = st.text_input("비밀번호", type="password")
-        
         if st.button("로그인"):
             if username in USERS and USERS[username] == password:
                 st.session_state["logged_in"] = True
                 st.session_state["username"] = username
-                # admin이면 관리자 권한 부여
                 st.session_state["user_role"] = "admin" if username == "admin" else "user"
-                st.rerun() # 화면 새로고침
+                st.rerun()
             else:
-                st.error("아이디 또는 비밀번호가 틀렸습니다.")
+                st.error("잘못된 정보입니다.")
 
-# --- 2. 메인 앱 (로그인 성공 후) ---
+# --- 2. 메인 앱 ---
 def main_app():
-    # 사이드바: 로그아웃 및 기본 정보
     with st.sidebar:
-        st.write(f"환영합니다, **{st.session_state['username']}**님!")
+        st.write(f"접속자: **{st.session_state['username']}** ({st.session_state['user_role']})")
         if st.button("로그아웃"):
             st.session_state["logged_in"] = False
-            st.session_state["username"] = ""
             st.rerun()
-        
         st.divider()
+        
         if "OPENAI_API_KEY" in st.secrets:
             api_key = st.secrets["OPENAI_API_KEY"]
         else:
             api_key = st.text_input("OpenAI API Key", type="password")
-            
-        menu = st.radio("메뉴 이동", ["💬 AI Chatbot", "📝 My Wiki"])
-    
+        
+        if st.session_state["user_role"] == "admin":
+            menu_options = ["💬 AI Chatbot", "⚙️ Admin Settings"]
+        else:
+            menu_options = ["💬 AI Chatbot"]
+        menu = st.radio("메뉴", menu_options)
+
     if not api_key:
-        st.warning("사이드바에 OpenAI API Key를 입력해주세요.")
+        st.warning("API Key가 필요합니다.")
         return
 
-    # --- 관리자 전용 기능: 지식 데이터베이스 업데이트 ---
-    # 오직 'admin' 계정으로 들어왔을 때만 이 화면이 보입니다.
-    if st.session_state["user_role"] == "admin":
-        with st.expander("🛠️ [관리자 메뉴] 지식 데이터(PDF) 추가하기"):
-            st.info("이곳은 관리자만 볼 수 있습니다. 새로운 SAP 매뉴얼을 추가하세요.")
-            uploaded_files = st.file_uploader("PDF 파일 업로드", type=["pdf"], accept_multiple_files=True)
-            
-            if st.button("DB에 저장 및 학습시키기"):
-                if uploaded_files:
-                    with st.spinner("문서를 분석하고 서가(DB)에 저장 중입니다..."):
-                        documents = []
-                        for uploaded_file in uploaded_files:
-                            # 임시 저장
-                            with open(uploaded_file.name, "wb") as f:
-                                f.write(uploaded_file.getbuffer())
-                            
-                            # 로드 및 분할
-                            loader = PyPDFLoader(uploaded_file.name)
-                            docs = loader.load()
-                            documents.extend(docs)
-                            os.remove(uploaded_file.name) # 임시 파일 삭제
-
-                        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-                        splits = text_splitter.split_documents(documents)
-
-                        # **핵심**: persist_directory에 저장합니다. (영구 보존)
-                        vectordb = Chroma.from_documents(
-                            documents=splits, 
-                            embedding=OpenAIEmbeddings(api_key=api_key),
-                            persist_directory=PERSIST_DIRECTORY
-                        )
-                        st.success(f"성공! {len(documents)}개의 페이지가 데이터베이스에 추가되었습니다.")
-                else:
-                    st.warning("업로드할 파일이 없습니다.")
-
-    # --- 기능 1: AI Chatbot (DB 활용) ---
-    if menu == "💬 AI Chatbot":
-        st.header("S/4HANA Expert AI")
+    # --- [관리자] 설정 메뉴 ---
+    if menu == "⚙️ Admin Settings":
+        st.header("🛠️ 관리자 설정")
         
-        # 채팅 기록 관리
+        st.subheader("1. 지식 데이터(PDF) 관리")
+        uploaded_files = st.file_uploader("PDF 업로드", type=["pdf"], accept_multiple_files=True)
+        if st.button("PDF 학습 및 저장"):
+            if uploaded_files:
+                with st.spinner("학습 중..."):
+                    documents = []
+                    for uploaded_file in uploaded_files:
+                        with open(uploaded_file.name, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                        loader = PyPDFLoader(uploaded_file.name)
+                        documents.extend(loader.load())
+                        os.remove(uploaded_file.name)
+                    
+                    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+                    splits = text_splitter.split_documents(documents)
+                    Chroma.from_documents(splits, OpenAIEmbeddings(api_key=api_key), persist_directory=PERSIST_DIRECTORY)
+                    st.success("학습 완료!")
+
+        st.divider()
+        st.subheader("2. AI 페르소나 설정")
+        current_instruction = load_instruction()
+        new_instruction = st.text_area("System Prompt", value=current_instruction, height=150)
+        if st.button("저장"):
+            save_instruction(new_instruction)
+            st.success("저장되었습니다.")
+
+    # --- [챗봇] 검색 + 웹 검색 기능 ---
+    elif menu == "💬 AI Chatbot":
+        st.header("S/4HANA Assistant (Hybrid Search)")
+        
+        system_instruction = load_instruction()
+        
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
@@ -128,65 +133,73 @@ def main_app():
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-        if prompt := st.chat_input("질문을 입력하세요..."):
+        if prompt := st.chat_input("질문하세요..."):
             st.session_state.messages.append({"role": "user", "content": prompt})
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-            # DB에서 검색해서 답변하기
-            try:
-                # 저장된 DB 불러오기
-                embedding_function = OpenAIEmbeddings(api_key=api_key)
-                vectordb = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embedding_function)
-                
-                # 검색기 설정
-                retriever = vectordb.as_retriever(search_kwargs={"k": 15}) # 관련 문서 3개 참조
-                
-                # LLM 설정
-                llm = ChatOpenAI(model_name="gpt-4o", temperature=0, api_key=api_key)
-                qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
+            # --- [핵심 로직] PDF 검색 + 웹 검색 결합 ---
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                message_placeholder.markdown("🔍 문서를 검색 중입니다...")
 
-                with st.chat_message("assistant"):
-                    with st.spinner("문서 검색 중..."):
-                        response = qa_chain.run(prompt)
-                        st.markdown(response)
-                        st.session_state.messages.append({"role": "assistant", "content": response})
-            except Exception as e:
-                # DB가 아직 없을 때 예외 처리
-                st.error("아직 학습된 데이터가 없습니다. 관리자에게 문의하세요.")
-                # st.error(f"Error detail: {e}") # 디버깅용
+                try:
+                    # 1. PDF 문서 검색
+                    embedding_function = OpenAIEmbeddings(api_key=api_key)
+                    vectordb = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embedding_function)
+                    retriever = vectordb.as_retriever(search_kwargs={"k": 3})
+                    docs = retriever.get_relevant_documents(prompt)
+                    
+                    pdf_context = "\n".join([doc.page_content for doc in docs])
+                    
+                    # 2. 웹 검색 (SAP 관련 사이트로 한정)
+                    # PDF 내용이 너무 적거나, 확실한 답변을 위해 외부 검색을 병행합니다.
+                    message_placeholder.markdown("🌐 SAP Community 및 공식 문서를 검색 중입니다...")
+                    
+                    search = DuckDuckGoSearchRun()
+                    # 검색어에 'site:sap.com' 등을 붙여서 전문가 커뮤니티만 찾게 강제합니다.
+                    search_query = f"site:sap.com OR site:help.sap.com OR site:community.sap.com {prompt}"
+                    try:
+                        web_context = search.run(search_query)
+                    except:
+                        web_context = "웹 검색을 수행할 수 없습니다."
 
-    # --- 기능 2: Wiki ---
-    elif menu == "📝 My Wiki":
-        st.header("프로젝트 위키 (Wiki)")
-        st.markdown("""
-        이곳은 팀원들이 공통으로 보는 가이드라인 페이지입니다.
-        Markdown 문법을 지원합니다.
-        """)
-        
-        # 탭으로 구분
-        tab1, tab2 = st.tabs(["읽기 모드", "수정 모드"])
-        
-        # 위키 내용도 파일로 저장하면 좋지만, 간단히 세션으로 예시
-        if "wiki_content" not in st.session_state:
-            st.session_state["wiki_content"] = "### 환영합니다\n이곳은 SAP 프로젝트 위키입니다."
+                    # 3. LLM에게 답변 요청 (문맥 결합)
+                    llm = ChatOpenAI(model_name="gpt-4o", temperature=0, api_key=api_key)
+                    
+                    full_template = f"""
+                    [지시사항]
+                    {system_instruction}
+                    
+                    당신은 SAP 전문가입니다. 아래의 [내부 문서]와 [외부 검색 결과]를 종합하여 답변하세요.
+                    
+                    1. 우선적으로 [내부 문서]의 내용을 기반으로 답변하세요.
+                    2. 만약 내부 문서에 내용이 없거나 부족하다면, [외부 검색 결과]를 사용하여 답변하세요.
+                    3. 외부 검색 결과를 사용했다면, 반드시 답변 끝에 "출처: SAP Community/Help"와 같이 명시하세요.
+                    4. 두 곳 모두 정보가 없다면 솔직하게 모른다고 답하세요.
 
-        with tab1:
-            st.markdown(st.session_state["wiki_content"])
-        
-        with tab2:
-            new_content = st.text_area("내용 수정", st.session_state["wiki_content"], height=300)
-            if st.button("위키 저장"):
-                st.session_state["wiki_content"] = new_content
-                st.success("저장되었습니다!")
-                st.rerun()
+                    [내부 문서 (PDF)]
+                    {pdf_context}
 
-# --- 앱 실행 흐름 제어 ---
+                    [외부 검색 결과 (Web)]
+                    {web_context}
+
+                    [사용자 질문]
+                    {prompt}
+
+                    [답변]
+                    """
+                    
+                    response = llm.invoke(full_template).content
+                    
+                    message_placeholder.markdown(response)
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+
+                except Exception as e:
+                    st.error(f"오류가 발생했습니다: {e}")
+
+# --- 실행 ---
 if st.session_state["logged_in"]:
     main_app()
 else:
-
     login_page()
-
-
-
