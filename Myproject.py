@@ -70,13 +70,13 @@ def main_app():
             st.rerun()
         
         st.divider()
-    if "OPENAI_API_KEY" in st.secrets:
-        api_key = st.secrets["OPENAI_API_KEY"]
-    else:
-        api_key = st.text_input("OpenAI API Key", type="password")
-        
+        if "OPENAI_API_KEY" in st.secrets:
+            api_key = st.secrets["OPENAI_API_KEY"]
+        else:
+            api_key = st.text_input("OpenAI API Key", type="password")
+            
         menu = st.radio("메뉴 이동", ["💬 AI Chatbot", "📝 My Wiki"])
-
+    
     if not api_key:
         st.warning("사이드바에 OpenAI API Key를 입력해주세요.")
         return
@@ -187,5 +187,6 @@ if st.session_state["logged_in"]:
 else:
 
     login_page()
+
 
 
