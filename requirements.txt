@@ -8,3 +8,4 @@ chromadb
 pypdf
 tiktoken
 pysqlite3-binary
+duckduckgo-search
