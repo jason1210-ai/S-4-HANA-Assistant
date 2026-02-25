@@ -70,8 +70,9 @@ def main_app():
             st.rerun()
         
         st.divider()
-        # API Key는 관리자가 아니더라도 동작하게 하려면 코드 내부에 심거나, 
-        # 여기서는 편의상 입력받게 합니다. (실제론 환경변수 사용 권장)
+    if "OPENAI_API_KEY" in st.secrets:
+        api_key = st.secrets["OPENAI_API_KEY"]
+    else:
         api_key = st.text_input("OpenAI API Key", type="password")
         
         menu = st.radio("메뉴 이동", ["💬 AI Chatbot", "📝 My Wiki"])
@@ -186,4 +187,5 @@ if st.session_state["logged_in"]:
 else:
 
     login_page()
+
 
