@@ -44,7 +44,7 @@ def load_instruction():
         with open(INSTRUCTION_FILE, "r", encoding="utf-8") as f:
             return f.read()
     else:
-        return "당신은 SAP S/4HANA 전문가입니다. 문서를 바탕으로 친절하게 답변해주세요."
+        return "당신은 SAP S/4HANA 전문가입니다. 친절하고 자세하게 답변해주세요."
 
 def save_instruction(text):
     with open(INSTRUCTION_FILE, "w", encoding="utf-8") as f:
@@ -122,7 +122,7 @@ def main_app():
 
     # --- [챗봇] 검색 + 웹 검색 기능 ---
     elif menu == "💬 AI Chatbot":
-        st.header("S/4HANA Assistant (Hybrid Search)")
+        st.header("S/4HANA Assistant")
         
         system_instruction = load_instruction()
         
@@ -173,10 +173,11 @@ def main_app():
                     
                     당신은 SAP 전문가입니다. 아래의 [내부 문서]와 [외부 검색 결과]를 종합하여 답변하세요.
                     
-                    1. 우선적으로 [내부 문서]의 내용을 기반으로 답변하세요.
-                    2. 만약 내부 문서에 내용이 없거나 부족하다면, [외부 검색 결과]를 사용하여 답변하세요.
-                    3. 외부 검색 결과를 사용했다면, 반드시 답변 끝에 "출처: SAP Community/Help"와 같이 명시하세요.
+                    1. 우선적으로 help.sap.com, sap community 등 공식 문서 내용을 기반으로 답변하세요.
+                    2. 외부 검색 결과를 사용했다면, 반드시 답변 끝에 "출처: SAP Community/Help"와 같이 명시하세요.
+                    3. 추가적으로 업로드한 PDF파일에 내용이 있는 경우 그 내용을 기반으로 추가 답변하세요. (페이지수 포함)
                     4. 두 곳 모두 정보가 없다면 솔직하게 모른다고 답하세요.
+                    5. 문의하는 주제에 대한 Img menu path와 T-code를 항상 같이 정리해주세요.
 
                     [내부 문서 (PDF)]
                     {pdf_context}
@@ -203,3 +204,4 @@ if st.session_state["logged_in"]:
     main_app()
 else:
     login_page()
+
