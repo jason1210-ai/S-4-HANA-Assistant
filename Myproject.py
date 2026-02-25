@@ -1,20 +1,22 @@
-# --- [중요] Streamlit Cloud에서 ChromaDB 오류 해결을 위한 코드 (가장 윗줄에 있어야 함) ---
+# --- [필수] Streamlit Cloud 오류 방지 코드 (맨 윗줄 유지) ---
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-# ------------------------------------------------------------------------------------
+# --------------------------------------------------------
 
 import streamlit as st
 import os
+
+# [수정] 최신 LangChain 패키지 구조에 맞춘 import
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
-
-# [수정된 부분] 옛날 주소 대신 새 주소 사용!
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 from langchain_community.vectorstores import Chroma
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+
+# [핵심] RetrievalQA는 이제 여기서 가져오는 게 안전합니다.
+from langchain.chains import RetrievalQA 
+# 만약 위 코드로도 에러가 나면 아래 줄 주석을 풀고 위 줄을 지우세요.
+# from langchain_community.chains import RetrievalQA
 
 # --- 설정 및 초기화 ---
 st.set_page_config(page_title="SAP S/4HANA Pro", layout="wide")
@@ -184,3 +186,4 @@ if st.session_state["logged_in"]:
 else:
 
     login_page()
+
